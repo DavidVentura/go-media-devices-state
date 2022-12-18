@@ -6,6 +6,7 @@
 const int AD_ERR_NO_ERR = 0;
 const int AD_ERR_OUT_OF_MEMORY = 1;
 const int AD_ERR_ALL_DEVICES_FAILED = 2;
+const int AD_ERR_NO_DEV_WITH_ID = 3;
 
 OSStatus getAudioDevicesCount(int *count) {
   OSStatus err;
@@ -84,19 +85,17 @@ bool isAudioCaptureDevice(NSString *uid) {
   return avDevice != nil;
 }
 
-void getAudioDeviceDescription(NSString *uid, NSString **description) {
+//FIXME common?
+OSStatus getAudioDeviceNameAndModel(NSString *uid, NSString **name, NSString **model) {
+  OSStatus err = AD_ERR_NO_ERR;
   AVCaptureDevice *avDevice = [AVCaptureDevice deviceWithUniqueID:uid];
   if (avDevice == nil) {
-    *description = [NSString
-        stringWithFormat:@"%@ (failed to get AVCaptureDevice with device UID)",
-                         uid];
+    err = AD_ERR_NO_DEV_WITH_ID;
   } else {
-    *description =
-        [NSString stringWithFormat:
-                      @"%@ (name: '%@', model: '%@', is exclusively used: %d)",
-                      uid, [avDevice localizedName], [avDevice modelID],
-                      [avDevice isInUseByAnotherApplication]];
+    *name = [avDevice localizedName];
+    *model = [avDevice modelID];
   }
+  return err;
 }
 
 OSStatus getAudioDeviceIsUsed(AudioDeviceID device, int *isUsed) {
@@ -121,24 +120,68 @@ OSStatus getAudioDeviceIsUsed(AudioDeviceID device, int *isUsed) {
 
   return err;
 }
+@interface AudioDevice : NSObject
+    @property (assign) bool used;
+    @property (assign) NSString *uid;
+    @property (assign) NSString *name;
+    @property (assign) NSString *model;
+@end
 
-OSStatus IsMicrophoneOn(int *on) {
-  NSLog(@"C.IsMicrophoneOn()");
+@implementation AudioDevice
+    @synthesize used;
+    @synthesize uid;
+    @synthesize name;
+    @synthesize model;
+@end
 
+NSMutableArray *aDevArray;
+unsigned long mic_dev_len() {
+    return aDevArray.count;
+}
+
+void mic_dev_init() {
+    aDevArray = [[NSMutableArray alloc] init];
+}
+const bool a_used_at(unsigned int i) {
+    if (i >= aDevArray.count) return NULL;
+    AudioDevice *vd = [aDevArray objectAtIndex:i];
+    return vd.used;
+}
+const char* a_uid_at(unsigned int i) {
+    if (i >= aDevArray.count) return NULL;
+    AudioDevice *vd = [aDevArray objectAtIndex:i];
+    const char *cstr = [vd.uid UTF8String];
+    return cstr;
+}
+const char* a_name_at(unsigned int i) {
+    if (i >= aDevArray.count) return NULL;
+    AudioDevice *vd = [aDevArray objectAtIndex:i];
+    const char *cstr = [vd.name UTF8String];
+    return cstr;
+}
+const char* a_model_at(unsigned int i) {
+    if (i >= aDevArray.count) return NULL;
+    AudioDevice *vd = [aDevArray objectAtIndex:i];
+    const char *cstr = [vd.model UTF8String];
+    return cstr;
+}
+
+void UpdateMicrophoneStatus(OSStatus *error) {
   OSStatus err;
 
   int count;
   err = getAudioDevicesCount(&count);
   if (err) {
     NSLog(@"C.IsMicrophoneOn(): failed to get devices count, error: %d", err);
-    return err;
+    *error = err;
+    return;
   }
 
   AudioDeviceID *devices = (AudioDeviceID *)malloc(count * sizeof(*devices));
   if (devices == NULL) {
     NSLog(@"C.IsMicrophoneOn(): failed to allocate memory, device count: %d",
           count);
-    return AD_ERR_OUT_OF_MEMORY;
+    *error = AD_ERR_OUT_OF_MEMORY;
   }
 
   err = getAudioDevices(count, devices);
@@ -146,17 +189,14 @@ OSStatus IsMicrophoneOn(int *on) {
     NSLog(@"C.IsMicrophoneOn(): failed to get devices, error: %d", err);
     free(devices);
     devices = NULL;
-    return err;
-  }
-
-  NSLog(@"C.IsMicrophoneOn(): found devices: %d", count);
-  if (count > 0) {
-    NSLog(@"C.IsMicrophoneOn(): # | is used | description");
+    *error = err;
+    return;
   }
 
   int failedDeviceCount = 0;
   int ignoredDeviceCount = 0;
 
+  [aDevArray removeAllObjects];
   for (int i = 0; i < count; i++) {
     AudioDeviceID device = devices[i];
 
@@ -184,29 +224,34 @@ OSStatus IsMicrophoneOn(int *on) {
       continue;
     }
 
-    NSString *description;
-    getAudioDeviceDescription(uid, &description);
-
-    NSLog(@"C.IsMicrophoneOn(): %d | %s     | %@", i,
-          isDeviceUsed == 0 ? "NO " : "YES", description);
-
-    if (isDeviceUsed != 0) {
-      *on = 1;
+    NSString *name;
+    NSString *model;
+    err = getAudioDeviceNameAndModel(uid, &name, &model);
+    if (err) {
+      failedDeviceCount++;
+      NSLog(@"C.IsMicrophoneOn(): %d | -       | failed to get device name/model: %d",
+            i, err);
+      continue;
     }
+
+    AudioDevice *ad = [AudioDevice alloc];
+    ad.uid = uid;
+    ad.used = isDeviceUsed;
+    ad.name = name;
+    ad.model = model;
+
+    [aDevArray addObject: ad];
+
   }
 
   free(devices);
   devices = NULL;
 
-  NSLog(@"C.IsMicrophoneOn(): failed devices: %d", failedDeviceCount);
-  NSLog(@"C.IsMicrophoneOn(): ignored devices (speakers): %d",
-        ignoredDeviceCount);
-  NSLog(@"C.IsMicrophoneOn(): is any microphone on: %s",
-        *on == 0 ? "NO" : "YES");
-
   if (failedDeviceCount == count) {
-    return AD_ERR_ALL_DEVICES_FAILED;
+    *error = err;
+    return;
   }
 
-  return AD_ERR_NO_ERR;
+  *error = AD_ERR_NO_ERR;
+  return;
 }
