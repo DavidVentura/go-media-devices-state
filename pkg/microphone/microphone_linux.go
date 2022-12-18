@@ -72,6 +72,25 @@ func IsMicrophoneOn() (bool, error) {
 	return false, nil
 }
 
+func getName(props map[string]string) string {
+	keysByPref := []string{"device.description", "node.nick", "api.alsa.card.name", "node.name", "api.alsa.card.longname"}
+	for _, k := range keysByPref {
+		v, found := props[k]
+		if found {
+			return v
+		}
+	}
+	return "No Name"
+
+	/*
+		device.description      Blue Snowball Pro
+		node.nick       Blue Snowball
+		api.alsa.card.name      Blue Snowball
+		node.name       alsa_input.usb-BLUE_MICROPHONE_Blue_Snowball_797_2019_07_20_33670-00.pro-input-0
+		api.alsa.card.longname  BLUE MICROPHONE Blue Snowball at usb-0000:00:05.0-3, full speed
+	*/
+
+}
 func audioDevices() ([]common.AVDevice, error) {
 	if client == nil || !client.Connected() {
 		if client != nil {
@@ -95,7 +114,7 @@ func audioDevices() ([]common.AVDevice, error) {
 		state := SourceState(source.SinkState)
 		vd := common.AVDevice{
 			Name:    source.Description,
-			Model:   "No idea yet",
+			Model:   getName(source.PropList),
 			Uid:     "No such thing",
 			Used:    state == Running,
 			Devtype: common.Mic,
