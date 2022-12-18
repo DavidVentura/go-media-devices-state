@@ -6,6 +6,9 @@ import (
 	"github.com/antonfisher/go-media-devices-state/pkg/microphone"
 )
 
+func InitCamDevices() {
+	camera.InitCamDevices()
+}
 // IsCameraOn returns true is any camera in the system is ON
 func IsCameraOn() (bool, error) {
 	return camera.IsCameraOn()

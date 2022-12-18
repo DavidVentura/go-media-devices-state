@@ -6,6 +6,7 @@
 const int VD_ERR_NO_ERR = 0;
 const int VD_ERR_OUT_OF_MEMORY = 1;
 const int VD_ERR_ALL_DEVICES_FAILED = 2;
+const int VD_ERR_NO_DEV_WITH_ID = 3;
 
 bool isIgnoredDeviceUID(NSString *uid) {
   // OBS virtual device always returns "is used" even when OBS is not running
@@ -89,19 +90,16 @@ OSStatus getVideoDeviceUID(CMIOObjectID device, NSString **uid) {
   return err;
 }
 
-void getVideoDeviceDescription(NSString *uid, NSString **description) {
+OSStatus getVideoDeviceNameAndModel(NSString *uid, NSString **name, NSString **model) {
+  OSStatus err = VD_ERR_NO_ERR;
   AVCaptureDevice *avDevice = [AVCaptureDevice deviceWithUniqueID:uid];
   if (avDevice == nil) {
-    *description = [NSString
-        stringWithFormat:@"%@ (failed to get AVCaptureDevice with device UID)",
-                         uid];
+    err = VD_ERR_NO_DEV_WITH_ID;
   } else {
-    *description =
-        [NSString stringWithFormat:
-                      @"%@ (name: '%@', model: '%@', is exclusively used: %d)",
-                      uid, [avDevice localizedName], [avDevice modelID],
-                      [avDevice isInUseByAnotherApplication]];
+    *name = [avDevice localizedName];
+    *model = [avDevice modelID];
   }
+  return err;
 }
 
 OSStatus getVideoDeviceIsUsed(CMIOObjectID device, int *isUsed) {
@@ -129,23 +127,74 @@ OSStatus getVideoDeviceIsUsed(CMIOObjectID device, int *isUsed) {
   return err;
 }
 
-OSStatus IsCameraOn(int *on) {
-  NSLog(@"C.IsCameraOn()");
+@interface VideoDevice : NSObject
+    @property (assign) bool used;
+    @property (assign) NSString *uid;
+    @property (assign) NSString *name;
+    @property (assign) NSString *model;
+@end
+@implementation VideoDevice
+    @synthesize used;
+    @synthesize uid;
+    @synthesize name;
+    @synthesize model;
+@end
 
+NSMutableArray *devArray;
+const bool used_at(unsigned int i) {
+    if (i >= devArray.count) return NULL;
+    VideoDevice *vd = [devArray objectAtIndex:i];
+    return vd.used;
+}
+const char* uid_at(unsigned int i) {
+    if (i >= devArray.count) return NULL;
+    VideoDevice *vd = [devArray objectAtIndex:i];
+    const char *cstr = [vd.uid UTF8String];
+    return cstr;
+}
+const char* name_at(unsigned int i) {
+    if (i >= devArray.count) return NULL;
+    VideoDevice *vd = [devArray objectAtIndex:i];
+    const char *cstr = [vd.name UTF8String];
+    return cstr;
+}
+const char* model_at(unsigned int i) {
+    if (i >= devArray.count) return NULL;
+    VideoDevice *vd = [devArray objectAtIndex:i];
+    const char *cstr = [vd.model UTF8String];
+    return cstr;
+}
+
+unsigned long vid_dev_len() {
+    return devArray.count;
+}
+
+void vid_dev_init() {
+    devArray = [[NSMutableArray alloc] init];
+}
+
+VideoDevice* vid_dev(unsigned int i) {
+    if (i >= devArray.count) return NULL;
+    return [devArray objectAtIndex:i];
+}
+
+void UpdateCameraStatus(OSStatus *error) {
   OSStatus err;
 
   int count;
   err = getVideoDevicesCount(&count);
   if (err) {
     NSLog(@"C.IsCameraOn(): failed to get devices count, error: %d", err);
-    return err;
+    *error = err;
+    return;
   }
 
   CMIODeviceID *devices = (CMIODeviceID *)malloc(count * sizeof(*devices));
   if (devices == NULL) {
     NSLog(@"C.IsCameraOn(): failed to allocate memory, device count: %d",
           count);
-    return VD_ERR_OUT_OF_MEMORY;
+    *error = VD_ERR_OUT_OF_MEMORY;
+    return;
   }
 
   err = getVideoDevices(count, devices);
@@ -153,17 +202,14 @@ OSStatus IsCameraOn(int *on) {
     NSLog(@"C.IsCameraOn(): failed to get devices, error: %d", err);
     free(devices);
     devices = NULL;
-    return err;
-  }
-
-  NSLog(@"C.IsCameraOn(): found devices: %d", count);
-  if (count > 0) {
-    NSLog(@"C.IsCameraOn(): # | is used | description");
+    *error = err;
+    return;
   }
 
   int failedDeviceCount = 0;
   int ignoredDeviceCount = 0;
 
+  [devArray removeAllObjects];
   for (int i = 0; i < count; i++) {
     CMIOObjectID device = devices[i];
 
@@ -190,27 +236,35 @@ OSStatus IsCameraOn(int *on) {
       continue;
     }
 
-    NSString *description;
-    getVideoDeviceDescription(uid, &description);
-
-    NSLog(@"C.IsCameraOn(): %d | %s     | %@", i,
-          isDeviceUsed == 0 ? "NO " : "YES", description);
-
-    if (isDeviceUsed != 0) {
-      *on = 1;
+    NSString *name;
+    NSString *model;
+    err = getVideoDeviceNameAndModel(uid, &name, &model);
+    if (err) {
+      failedDeviceCount++;
+      NSLog(@"C.IsCameraOn(): %d | -       | failed to get device name/model: %d",
+            i, err);
+      continue;
     }
+ 
+    VideoDevice *vd = [VideoDevice alloc];
+    vd.uid = uid;
+    vd.used = isDeviceUsed;
+    vd.name = name;
+    vd.model = model;
+
+    [devArray addObject: vd];
   }
 
   free(devices);
   devices = NULL;
 
-  NSLog(@"C.IsCameraOn(): failed devices: %d", failedDeviceCount);
-  NSLog(@"C.IsCameraOn(): ignored devices (always on): %d", ignoredDeviceCount);
-  NSLog(@"C.IsCameraOn(): is any camera on: %s", *on == 0 ? "NO" : "YES");
-
   if (failedDeviceCount == count) {
-    return VD_ERR_ALL_DEVICES_FAILED;
+    *error = VD_ERR_ALL_DEVICES_FAILED;
+    return;
   }
 
-  return VD_ERR_NO_ERR;
+  *error = VD_ERR_NO_ERR;
+  //NSArray *ret = [devArray copy];
+  //[devArray release];
+  return;
 }

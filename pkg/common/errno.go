@@ -4,4 +4,5 @@ const (
 	ErrNoErr = iota
 	ErrOutOfMemory
 	ErrAllDevicesFailed
+	ErrNoDeviceWithId
 )
