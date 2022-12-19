@@ -11,7 +11,7 @@ import "C"
 import (
 	"fmt"
 
-	"github.com/antonfisher/go-media-devices-state/pkg/common"
+	"github.com/davidventura/go-media-devices-state/pkg/common"
 )
 
 func vid_dev(i uint) common.AVDevice {

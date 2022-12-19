@@ -1,9 +1,9 @@
 package mediadevicesstate
 
 import (
-	"github.com/antonfisher/go-media-devices-state/pkg/camera"
-	"github.com/antonfisher/go-media-devices-state/pkg/debug"
-	"github.com/antonfisher/go-media-devices-state/pkg/microphone"
+	"github.com/davidventura/go-media-devices-state/pkg/camera"
+	"github.com/davidventura/go-media-devices-state/pkg/debug"
+	"github.com/davidventura/go-media-devices-state/pkg/microphone"
 )
 
 func InitDevices() {

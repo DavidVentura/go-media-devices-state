@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/antonfisher/go-media-devices-state/pkg/common"
+	"github.com/davidventura/go-media-devices-state/pkg/common"
 	"github.com/noisetorch/pulseaudio"
 )
 

@@ -1,4 +1,4 @@
-module github.com/antonfisher/go-media-devices-state
+module github.com/davidventura/go-media-devices-state
 
 go 1.15
 
