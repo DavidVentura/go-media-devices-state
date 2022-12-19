@@ -62,7 +62,7 @@ func IsMicrophoneOn() (bool, error) {
 		return false, err
 	}
 	for _, dev := range devs {
-		fmt.Printf("%#v\n", dev)
+		// fmt.Printf("%#v\n", dev)
 		if dev.Used {
 			isMicrophoneOn = true
 		}
